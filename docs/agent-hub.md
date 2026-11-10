@@ -89,9 +89,11 @@ The list stays short: it shows a few rows plus an expander (`display.pinnedAgent
 
 Set `display.subagentLivePreview: true` to add a second line under each row showing what that agent is doing: its current tool call (or, between calls, the most recent one) with a one-line detail, plus the elapsed time once a call runs longer than five seconds. Off by default.
 
-Enable `tui.mouse` to click live subagent cards and jump-list rows directly in the main session, without opening the Hub first. A click focuses that card's most recent agent (a jump-list row focuses its exact agent); focusing a parked agent revives it. Hovering a live target lights it up first, so you can see what a click will open.
+Enable `tui.mouse` to click live subagent cards, IRC message cards, and jump-list rows directly in the main session, without opening the Hub first. A click focuses that card's most recent agent (a jump-list row focuses its exact agent); focusing a parked agent revives it. Hovering a live target lights it up first, so you can see what a click will open.
 
 Only rows currently in the live viewport are clickable — retired transcript rows live in terminal scrollback, where clicks cannot map back to content. Enabling capture changes terminal gestures while on: text selection becomes Shift+drag, and the terminal reports wheel ticks to omp instead of scrolling, so plain wheel scrolling stops; scroll with the terminal's keyboard scrollback keys or turn capture off. Off by default.
+
+In Tern, IRC message cards link the agents they name, with no setting needed: click the sender or recipient under a card's title to view that agent, or `Main` to return to the main session.
 
 ## Persisted agents and advisors
 

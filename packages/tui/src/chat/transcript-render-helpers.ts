@@ -185,9 +185,14 @@ export function buildLaunchCompletionBlock(message: CustomOrHookMessage): ToolAc
 /**
  * Render an IRC coordination custom message (`irc:incoming` / `irc:autoreply` /
  * `irc:relay` / `irc:workpool`) as a tool-activity card. `getExpanded` supplies
- * the live expanded-state getter for the cached card.
+ * the live expanded-state getter for the cached card; `onViewAgent` links the
+ * agents it names to their sessions.
  */
-export function buildIrcMessageCard(message: CustomOrHookMessage, getExpanded: () => boolean): Component {
+export function buildIrcMessageCard(
+	message: CustomOrHookMessage,
+	getExpanded: () => boolean,
+	onViewAgent?: (id: string) => void,
+): Component {
 	const details = (
 		message as CustomMessage<{
 			from?: string;
@@ -221,6 +226,7 @@ export function buildIrcMessageCard(message: CustomOrHookMessage, getExpanded: (
 			},
 			getExpanded,
 			theme,
+			onViewAgent,
 		),
 	);
 }
@@ -230,11 +236,13 @@ export function buildParentIrcMessageCard(
 	parentIrc: { from: string; body: string },
 	timestamp: number,
 	getExpanded: () => boolean,
+	onViewAgent?: (id: string) => void,
 ): Component {
 	return createIrcMessageCard(
 		{ kind: "incoming", from: parentIrc.from, body: parentIrc.body, timestamp },
 		getExpanded,
 		theme,
+		onViewAgent,
 	);
 }
 

@@ -233,6 +233,12 @@ export interface InteractiveModeContext {
 	unfocusSession(): Promise<void>;
 	/** Drop pending focus requests without changing the view (delegates to SessionFocusController.invalidatePendingFocus). */
 	invalidatePendingFocus(): void;
+	/**
+	 * View agent `id` for a pointer gesture (a subagent card or HUD row click, a viewing-header
+	 * crumb, an IRC card's agent link): focus its session, `Main` returning to the main one. The
+	 * agent already viewed is reaffirmed instead; a failure shows as status.
+	 */
+	viewAgent(id: string): void;
 	/** Candidate subagent ids under a mutable-viewport line, for click-to-focus. Empty when the line has no target. */
 	resolveViewportClickCandidates(index: number): string[];
 	/**

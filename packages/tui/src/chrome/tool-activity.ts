@@ -40,6 +40,19 @@ export class ToolActivityContainer extends Container implements ToolActivityComp
 		}
 	}
 
+	/**
+	 * Forward click-to-focus agents of wrapped children: the composer hit-tests
+	 * only top-level transcript blocks, so a wrapped card's targets would be lost.
+	 */
+	getClickFocusAgentIds(): string[] {
+		const ids: string[] = [];
+		for (const child of this.children) {
+			const target = child as Partial<{ getClickFocusAgentIds(): string[] }>;
+			if (typeof target.getClickFocusAgentIds === "function") ids.push(...target.getClickFocusAgentIds());
+		}
+		return ids;
+	}
+
 	override render(width: number): readonly string[] {
 		if (!this.#visible) return [];
 		return super.render(width);

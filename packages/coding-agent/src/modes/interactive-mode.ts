@@ -1973,6 +1973,17 @@ export class InteractiveMode implements InteractiveModeContext {
 	invalidatePendingFocus(): void {
 		this.#focusController.invalidatePendingFocus();
 	}
+	viewAgent(id: string): void {
+		if (id === this.focusedAgentId) {
+			// Reaffirming the current view is still the user's latest click: a
+			// parked agent reviving from an older click must not land over it.
+			this.invalidatePendingFocus();
+			return;
+		}
+		void this.focusAgentSession(id).catch((error: unknown) => {
+			this.showStatus(error instanceof Error ? error.message : String(error));
+		});
+	}
 
 	resolveViewportClickCandidates(index: number): string[] {
 		return this.composer.viewportClickCandidates(index);

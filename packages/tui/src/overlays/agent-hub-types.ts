@@ -3,6 +3,11 @@ import type { Model } from "@oh-my-pi/pi-ai";
 
 /** Identity of the ambient main session in the agent roster. */
 export const MAIN_AGENT_ID = "Main";
+/**
+ * Action code prefix of a native link that views an agent: `focus:<agent id>`,
+ * {@link MAIN_AGENT_ID} for the main session (the composer's viewing header, IRC cards).
+ */
+export const FOCUS_AGENT_ACTION = "focus:";
 /** Lifecycle state shown in the roster. */
 export type AgentStatus = "running" | "idle" | "parked" | "aborted";
 /** Usage summary consumed by the roster and inspector. */

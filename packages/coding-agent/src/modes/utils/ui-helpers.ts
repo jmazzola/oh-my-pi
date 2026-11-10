@@ -372,7 +372,11 @@ export class UiHelpers {
 						message.customType === "irc:relay" ||
 						message.customType === "irc:workpool"
 					) {
-						const card = buildIrcMessageCard(message, () => this.ctx.toolOutputExpanded);
+						const card = buildIrcMessageCard(
+							message,
+							() => this.ctx.toolOutputExpanded,
+							id => this.ctx.viewAgent(id),
+						);
 						this.ctx.chatContainer.addChild(card);
 						return [card];
 					}
@@ -431,6 +435,7 @@ export class UiHelpers {
 						message.parentIrc,
 						message.timestamp,
 						() => this.ctx.toolOutputExpanded,
+						id => this.ctx.viewAgent(id),
 					);
 					this.ctx.chatContainer.addChild(card);
 					break;

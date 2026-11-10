@@ -14,7 +14,7 @@ import { getSpaceHoldText, SpaceHoldGesture } from "../space-hold";
 import { type Component, TUI } from "../tui";
 import type { AppKeybinding } from "../app-keybindings";
 import { formatTooltipKey } from "../key-hint-format";
-import { MAIN_AGENT_ID } from "../overlays/agent-hub-types";
+import { FOCUS_AGENT_ACTION, MAIN_AGENT_ID } from "../overlays/agent-hub-types";
 import { compact, keyed, node, row, span } from "../native/describe";
 import type { DescribeContext, NativeNode, NativeUiEvent } from "../native/node";
 import type { ComposerFacts, ComposerFactsSource } from "../status-line/types";
@@ -73,9 +73,6 @@ export interface ComposerNativeState {
 	/** The session's title, quoted in italics as the TSP placeholder; undefined until it has one. */
 	readonly title?: string;
 }
-
-/** Action code prefix of the viewing header's links: `focus:<agent id>`, {@link MAIN_AGENT_ID} for the main session. */
-const FOCUS_ACTION = "focus:";
 
 const IDLE_COMPOSER: ComposerNativeState = { running: false };
 
@@ -1215,7 +1212,7 @@ export class CustomEditor extends Editor {
 					text: id,
 					wrap: "none",
 					title: `View ${id}`,
-					actions: { click: `${FOCUS_ACTION}${id}` },
+					actions: { click: `${FOCUS_AGENT_ACTION}${id}` },
 				},
 				undefined,
 				`crumb:${id}`,
@@ -1235,7 +1232,7 @@ export class CustomEditor extends Editor {
 							gap: "xs",
 							align: "center",
 							title: `Back to the main session  ${back}`,
-							actions: { click: `${FOCUS_ACTION}${MAIN_AGENT_ID}` },
+							actions: { click: `${FOCUS_AGENT_ACTION}${MAIN_AGENT_ID}` },
 						},
 						[
 							node("kbd", { keys: [interruptKey] }, undefined, "key"),
@@ -1455,7 +1452,8 @@ export class CustomEditor extends Editor {
 				this.onEscape?.();
 				return;
 			default:
-				if (event.act.startsWith(FOCUS_ACTION)) this.onFocusAgent?.(event.act.slice(FOCUS_ACTION.length));
+				if (event.act.startsWith(FOCUS_AGENT_ACTION))
+					this.onFocusAgent?.(event.act.slice(FOCUS_AGENT_ACTION.length));
 				else this.composerFacts?.handleNativeEvent(event);
 		}
 	}

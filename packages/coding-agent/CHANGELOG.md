@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- IRC message cards link the subagents they name: in Tern, click the sender or recipient to view that agent (`Main` returns to the main session); with `tui.mouse` on, clicking a live IRC card focuses its subagent like a task card
+
 ### Fixed
 
 - Fixed agents showing as idle in the Agent Hub while still running after a failed streaming edit preview (`edit.streamingAbort`) auto-recovered the turn ([#18790](https://github.com/can1357/oh-my-pi/pull/18790) by [@H4vC](https://github.com/H4vC))

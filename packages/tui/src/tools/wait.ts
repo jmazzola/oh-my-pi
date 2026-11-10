@@ -29,7 +29,8 @@ import type { RenderResultOptions, ToolRenderer, ToolActivitySummary } from "./r
 import type { IrcDeliveryReceipt, IrcMessage } from "./irc";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
 import { card as cardNode, compact, elapsed, keyed, md, node, row, span, text } from "../native/describe";
-import type { NativeNode } from "../native/node";
+import type { NativeNode, NativeUiEvent } from "../native/node";
+import { FOCUS_AGENT_ACTION, MAIN_AGENT_ID } from "../overlays/agent-hub-types";
 import { OwnerMemo } from "../native/memo";
 import { plainText } from "../native/spans";
 import { errorView, resultText, toolHead } from "./native-view";
@@ -699,16 +700,49 @@ function bodyLines(
 	return lines;
 }
 
+/** What an IRC card shows: a DM delivered here, a reply sent for this session, observed agent↔agent traffic, or a pool dispatch. */
+type IrcCardKind = "incoming" | "autoreply" | "relay" | "workpool";
+
+/**
+ * The agents an IRC card names besides the session showing it: the sender of
+ * a delivered message, the recipient of one sent for this session or its
+ * pool, both sides of an observed relay. A broadcast's `all` names none.
+ */
+function ircCardAgents(card: { kind: IrcCardKind; from?: string; to?: string }): string[] {
+	const named = card.kind === "incoming" ? [card.from] : card.kind === "relay" ? [card.from, card.to] : [card.to];
+	const agents: string[] = [];
+	for (const name of named) {
+		const id = name?.trim();
+		if (id && id !== "all" && !agents.includes(id)) agents.push(id);
+	}
+	return agents;
+}
+
+/** A native link that views agent `id` on click ({@link MAIN_AGENT_ID}: back to the main session). */
+function agentLink(id: string): NativeNode {
+	const name = plainText(id);
+	return text([span(name, "link")], {
+		role: "omp.irc.agent",
+		wrap: "none",
+		title: id === MAIN_AGENT_ID ? "Back to the main session" : `View ${name}`,
+		actions: { click: `${FOCUS_AGENT_ACTION}${id}` },
+	});
+}
+
 /**
  * Display-only transcript card for live IRC traffic: `irc:incoming` DMs
  * delivered to this session, `irc:autoreply` side-channel replies sent on
  * this session's behalf, and `irc:relay` observations of agent↔agent
  * traffic. Shares the tool renderer's glyph + quote-border conventions so
  * cards and peer-message output look identical in the transcript.
+ *
+ * With `onViewAgent`, the agents the card names link to their sessions: in
+ * Tern each is a link that views it, and in a plain terminal a click on the
+ * card focuses one of its subagents (`tui.mouse`).
  */
 export function createIrcMessageCard(
 	card: {
-		kind: "incoming" | "autoreply" | "relay" | "workpool";
+		kind: IrcCardKind;
 		from?: string;
 		to?: string;
 		body?: string;
@@ -719,6 +753,7 @@ export function createIrcMessageCard(
 	},
 	getExpanded: () => boolean,
 	uiTheme: Theme,
+	onViewAgent?: (id: string) => void,
 ): Component {
 	const from = card.from?.trim() || "?";
 	const title =
@@ -736,6 +771,7 @@ export function createIrcMessageCard(
 	if (card.replyTo) meta.push("reply");
 	const age = messageAge(card.timestamp);
 	if (age) meta.push(age);
+	const agents = onViewAgent ? ircCardAgents(card) : [];
 	const component = createCachedComponent(getExpanded, (width, expanded) => {
 		const lines = [renderStatusLine({ iconOverride: ircGlyph(uiTheme), title, meta }, uiTheme)];
 		if (body.trim()) {
@@ -748,6 +784,16 @@ export function createIrcMessageCard(
 		}
 		return lines.map(line => truncateToWidth(line, width, Ellipsis.Unicode));
 	});
+	// The agent links lead the first row, the message's age after them.
+	const lead: NativeNode[] = [];
+	for (const id of agents) {
+		if (lead.length > 0) lead.push(text([span(plainText(uiTheme.nav.selected), "dim")]));
+		lead.push(agentLink(id));
+	}
+	if (card.timestamp) {
+		if (lead.length > 0) lead.push(text([span("·", "dim")]));
+		lead.push(elapsed(Date.now() - card.timestamp), text([span("ago", "dim")]));
+	}
 	// Terminal-local collapse replaces `getExpanded`; the node never changes after creation.
 	const described = cardNode(
 		{
@@ -760,14 +806,21 @@ export function createIrcMessageCard(
 			collapsible: body.trim().length > 0,
 			preview: { lines: 3 },
 		},
-		compact([
-			card.timestamp
-				? row([elapsed(Date.now() - card.timestamp), text([span("ago", "dim")])], { gap: "xs" })
-				: undefined,
-			body.trim() ? md(body) : undefined,
-		]),
+		compact([lead.length > 0 ? row(lead, { gap: "xs" }) : undefined, body.trim() ? md(body) : undefined]),
 	);
-	return Object.assign(component, { describe: () => described });
+	return Object.assign(component, {
+		describe: () => described,
+		/** A click on an agent link views that agent. */
+		handleNativeEvent(event: NativeUiEvent): void {
+			if (event.type !== "action" || !event.act.startsWith(FOCUS_AGENT_ACTION)) return;
+			const id = event.act.slice(FOCUS_AGENT_ACTION.length);
+			if (agents.includes(id)) onViewAgent?.(id);
+		},
+		/** Subagents a plain-terminal click on the card focuses; the main session is the view itself, not a target. */
+		getClickFocusAgentIds(): string[] {
+			return agents.filter(id => id !== MAIN_AGENT_ID);
+		},
+	});
 }
 
 function describeJobsResult(

@@ -812,7 +812,7 @@ export class InputController {
 			}
 		};
 		// The native composer's viewing header: an ancestor crumb, or back to main.
-		this.ctx.editor.onFocusAgent = id => this.#focusResolvedAgent(id);
+		this.ctx.editor.onFocusAgent = id => this.ctx.viewAgent(id);
 
 		this.#setupEnhancedPaste();
 
@@ -975,20 +975,7 @@ export class InputController {
 			this.ctx.showStatus("That subagent is gone — open the hub for live agents");
 			return;
 		}
-		this.#focusResolvedAgent(nextId);
-	}
-
-	/** Focus a resolved agent id, ignoring already-viewing and surfacing errors as status. */
-	#focusResolvedAgent(nextId: string): void {
-		if (nextId === this.ctx.focusedAgentId) {
-			// Reaffirming the current view is still the user's latest click: a
-			// parked agent reviving from an older click must not land over it.
-			this.ctx.invalidatePendingFocus();
-			return;
-		}
-		void this.ctx.focusAgentSession(nextId).catch((error: unknown) => {
-			this.ctx.showStatus(error instanceof Error ? error.message : String(error));
-		});
+		this.ctx.viewAgent(nextId);
 	}
 
 	/**
