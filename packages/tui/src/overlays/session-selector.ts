@@ -152,6 +152,26 @@ function sessionDayGroup(modified: Date, startOfToday: number): { id: string; la
 	return { id: "earlier", label: "Earlier" };
 }
 
+/** The orders `app.session.toggleSort` cycles the list through, the default first. */
+const SESSION_SORTS = ["recent", "status", "size"] as const;
+/** How the list is ordered: by recency (the search ranking while a query is typed), by status, or by size. */
+type SessionSort = (typeof SESSION_SORTS)[number];
+const SESSION_SORT_LABELS: Record<SessionSort, string> = { recent: "Recent", status: "Status", size: "Size" };
+
+/**
+ * The status sort's rank and native group of each lifecycle status: sessions
+ * that need a look lead (red dots, then yellow), finished ones follow.
+ */
+const STATUS_GROUPS: Record<SessionSelectorStatus, { rank: number; id: string; label: string }> = {
+	error: { rank: 0, id: "status-error", label: "Error" },
+	aborted: { rank: 1, id: "status-aborted", label: "Aborted" },
+	interrupted: { rank: 2, id: "status-interrupted", label: "Interrupted" },
+	pending: { rank: 3, id: "status-pending", label: "Pending" },
+	complete: { rank: 4, id: "status-complete", label: "Done" },
+	unknown: { rank: 5, id: "status-unknown", label: "Unknown" },
+};
+const SIZE_GROUP = { id: "size", label: "Largest first" };
+
 /** A cwd as dim-prefix / strong-tail path spans. */
 function cwdSpans(cwd: string): TspSpan[] {
 	const short = shortenPath(cwd);
@@ -550,6 +570,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	#allSessions: T[];
 	#showCwd: boolean;
 	#pinnedIds: ReadonlySet<string>;
+	#sort: SessionSort = "recent";
 	readonly #getCurrentSessionPath: () => string | undefined;
 	readonly #historyMatcher?: SessionHistoryMatcher;
 	#historyMergeTimer: NodeJS.Timeout | undefined;
@@ -613,7 +634,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		this.#getCurrentSessionPath =
 			typeof currentSessionPath === "function" ? currentSessionPath : () => currentSessionPath;
 		this.#historyMatcher = historyMatcher;
-		this.#menu = new MenuSelection<T>(this.#pinnedFirst(sessions), {
+		this.#menu = new MenuSelection<T>(this.#arranged(sessions), {
 			getKey: session => session.path,
 			getSearchText: sessionSearchText,
 		});
@@ -705,7 +726,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		this.#hadFilterQuery = tokens.length > 0;
 		this.#lastFilterQuery = query;
 		if (tokens.length === 0) {
-			const items = this.#pinnedFirst(this.#allSessions);
+			const items = this.#arranged(this.#allSessions);
 			const keepIndex = Math.min(this.#menu.selectedIndex, Math.max(0, items.length - 1));
 			this.#menu.setItems(items, keepIndex >= 0 ? items[keepIndex]?.path : undefined);
 			if (hadQuery) this.#selectCurrentSession();
@@ -783,7 +804,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	/**
 	 * Rebuild the menu's visible list with pinned sessions first, then title
 	 * matches, other prompt-history hits, literal matches (recency), and
-	 * fuzzy-only hits (score).
+	 * fuzzy-only hits (score); a status or size sort reorders that ranking.
 	 */
 	#composeFiltered(): void {
 		this.#itemsVersion++;
@@ -791,7 +812,7 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		const base: T[] = [];
 		for (const match of this.#literalRanked) base.push(match.session);
 		for (const match of this.#fuzzyRanked) base.push(match.session);
-		const composed = this.#pinnedFirst(
+		const composed = this.#arranged(
 			prioritizeTitleMatches(
 				this.#historyIds.length > 0 ? mergeSessionRanking(this.#allSessions, base, this.#historyIds) : base,
 				tokenizeSessionQuery(this.#searchInput.getValue()),
@@ -814,6 +835,34 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		const pins = this.#pinnedIds;
 		const pinned = pins.size > 0 ? sessions.filter(session => pins.has(session.id)) : [];
 		return pinned.length > 0 ? [...pinned, ...sessions.filter(session => !pins.has(session.id))] : sessions;
+	}
+
+	/**
+	 * `sessions` in the list's order: pinned first, each group sorted by
+	 * {@link #sort}: as given for `recent` (the listing's recency, or the search
+	 * ranking), sessions that need a look first for `status`, largest first for
+	 * `size`. The sorts are stable, so ties keep the given order.
+	 */
+	#arranged(sessions: readonly T[]): readonly T[] {
+		if (this.#sort === "status") {
+			return this.#pinnedFirst(
+				sessions.toSorted(
+					(a, b) => STATUS_GROUPS[a.status ?? "unknown"].rank - STATUS_GROUPS[b.status ?? "unknown"].rank,
+				),
+			);
+		}
+		if (this.#sort === "size") return this.#pinnedFirst(sessions.toSorted((a, b) => b.size - a.size));
+		return this.#pinnedFirst(sessions);
+	}
+
+	/** Re-apply the list order (pins, sort) to the visible rows, a query's ranking included. */
+	#rearrange(): void {
+		if (this.#hadFilterQuery) {
+			this.#composeFiltered();
+		} else {
+			this.#itemsVersion++;
+			this.#menu.setItems(this.#arranged(this.#allSessions));
+		}
 	}
 
 	/**
@@ -947,12 +996,20 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		// Counts as moving the selection: it keeps the cursor on this session
 		// and a pending history merge from reordering under it.
 		this.#selectionMoved = true;
-		if (this.#hadFilterQuery) {
-			this.#composeFiltered();
-		} else {
-			this.#itemsVersion++;
-			this.#menu.setItems(this.#pinnedFirst(this.#allSessions));
-		}
+		this.#rearrange();
+	}
+
+	/** The list's order (`app.session.toggleSort` cycles it). */
+	get sort(): SessionSort {
+		return this.#sort;
+	}
+
+	/** Sort by the next order; the selection goes to the top of the re-sorted list. */
+	cycleSort(): void {
+		this.#sort = SESSION_SORTS[(SESSION_SORTS.indexOf(this.#sort) + 1) % SESSION_SORTS.length]!;
+		this.#selectionMoved = false;
+		this.#rearrange();
+		this.#menu.setSelectedIndex(0);
 	}
 
 	/** Whether the selected session is pinned (picks the pin action's direction). */
@@ -982,8 +1039,9 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 	 * identity while typing (rebuilt when the set, pins, the live session or
 	 * the minute change); a query changes only `order`, `hits` and
 	 * `selected`, plus `itemsAdd` upserts for prompt-history badges. Without
-	 * a query `order` groups pinned sessions, then by day (Today, Yesterday,
-	 * This week, Earlier); with one it is the flat ranking.
+	 * a query `order` groups pinned sessions, then by the sort: by day (Today,
+	 * Yesterday, This week, Earlier), by status, or one largest-first group;
+	 * with one it is the flat ranking.
 	 */
 	pickerView(): SessionPickerView {
 		const catalogue = this.#catalogue();
@@ -1010,9 +1068,15 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 		if (tokens.length === 0) {
 			const now = new Date();
 			const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-			// Pins lead the listing (`#pinnedFirst`), so they get their own group ahead of the days.
+			// Pins lead the listing (`#arranged`), so they get their own group ahead of the sort's.
 			const groups = visible.map(session =>
-				this.#pinnedIds.has(session.id) ? PINNED_GROUP : sessionDayGroup(session.modified, startOfToday),
+				this.#pinnedIds.has(session.id)
+					? PINNED_GROUP
+					: this.#sort === "status"
+						? STATUS_GROUPS[session.status ?? "unknown"]
+						: this.#sort === "size"
+							? SIZE_GROUP
+							: sessionDayGroup(session.modified, startOfToday),
 			);
 			for (let i = 0; i < visible.length; i++) {
 				const group = groups[i]!;
@@ -1400,6 +1464,10 @@ class SessionList<T extends SessionSelectorEntry> implements Component {
 			this.requestPin(false);
 			return;
 		}
+		if (keybindings.matches(keyData, "app.session.toggleSort")) {
+			this.cycleSort();
+			return;
+		}
 		// Up arrow
 		if (matchesSelectUp(keyData)) {
 			this.#selectionMoved = true;
@@ -1578,6 +1646,7 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 				view: SessionPickerView;
 				preview: readonly NativeChild[];
 				scope: "folder" | "all";
+				sort: SessionSort;
 				message: SessionPickerMessage | undefined;
 				errorOpen: boolean;
 				choice: DeleteChoice<T> | null;
@@ -1589,6 +1658,7 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		| {
 				title: string;
 				scope: "folder" | "all";
+				sort: SessionSort;
 				message: SessionPickerMessage | undefined;
 				dialog: HookSelectorComponent | OverlayPanel | null;
 				list: NativeNode;
@@ -2026,9 +2096,13 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		const cancel = interruptKey();
 		const pin = this.#pinAction();
 		const pinKey = pin && getKeybindings().getKeys(pin.binding)[0];
+		const sortKey = getKeybindings().getKeys("app.session.toggleSort")[0];
+		const sortHint = sortKey
+			? ` · ${formatKeyHint(sortKey)} sort: ${SESSION_SORT_LABELS[this.#sessionList.sort].toLowerCase()}`
+			: "";
 		const hint = theme.fg(
 			"muted",
-			`[${this.#onDelete ? `${formatKeyHints(["delete", "backspace"])} delete · ` : ""}${this.#onRename ? `${formatKeyHint("f2")} rename · ` : ""}${pinKey ? `${formatKeyHint(pinKey)} ${pin.label} · ` : ""}${formatKeyHint("enter")} select · ${formatKeyHint("tab")} ${scopeHint} · ${cancel} cancel]`,
+			`[${this.#onDelete ? `${formatKeyHints(["delete", "backspace"])} delete · ` : ""}${this.#onRename ? `${formatKeyHint("f2")} rename · ` : ""}${pinKey ? `${formatKeyHint(pinKey)} ${pin.label} · ` : ""}${formatKeyHint("enter")} select · ${formatKeyHint("tab")} ${scopeHint}${sortHint} · ${cancel} cancel]`,
 		);
 		return [row("", width), row(hint, width), row("", width), bottomBorder(width)];
 	}
@@ -2060,10 +2134,12 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		if (cx.supports("picker") && !this.#renameDialog) return this.#describePicker();
 		const list = this.#sessionList.describeList();
 		const dialog = this.#confirmationDialog ?? this.#renameDialog;
+		const sort = this.#sessionList.sort;
 		const memo = this.#nativeMemo;
 		if (
 			memo?.title === this.title &&
 			memo.scope === this.#scope &&
+			memo.sort === sort &&
 			memo.message === this.#message &&
 			memo.dialog === dialog &&
 			memo.list === list
@@ -2093,6 +2169,7 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		if (this.#sessionList.onToggleScope) {
 			hints.push({ keys: ["tab"], label: this.#scope === "all" ? "current folder" : "all projects" });
 		}
+		hints.push(actionHint("app.session.toggleSort", `sort: ${SESSION_SORT_LABELS[sort].toLowerCase()}`));
 		hints.push({ keys: [boundKeys("app.interrupt", ["escape"])[0] ?? "escape"], label: "cancel" });
 		const result = overlayCard("omp.overlay.sessions", tabs ? this.#title : this.title, [
 			...children,
@@ -2101,6 +2178,7 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		this.#nativeMemo = {
 			title: this.title,
 			scope: this.#scope,
+			sort,
 			message,
 			dialog,
 			list,
@@ -2111,11 +2189,12 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 
 	/**
 	 * `lg` cards sheet (`screen` for the standalone app): sessions grouped by
-	 * day (ranked flat while searching), the selected session's preview, the
+	 * the sort (ranked flat while searching), the selected session's preview, the
 	 * delete confirm strip, and the actions of the keys Enter, Delete/Backspace,
 	 * F2 (rename), the pin keys (Pin / Unpin, whichever applies to the selected
 	 * session), Tab (the scope toggle, labelled with the scope it switches
-	 * to) and Esc. Untitled unless the caller named it; the placeholder says the scope.
+	 * to), the sort key (`Sort: …`, labelled with the order shown) and Esc.
+	 * Untitled unless the caller named it; the placeholder says the scope.
 	 */
 	#describePicker(): NativeNode {
 		const list = this.#sessionList;
@@ -2125,11 +2204,13 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		const errorOpen = this.#pickerErrorOpen && message?.kind === "error";
 		const choice = this.#deleteChoice;
 		const rename = this.#renameDialog;
+		const sort = list.sort;
 		const memo = this.#pickerMemo;
 		if (
 			memo?.view === view &&
 			memo.preview === preview &&
 			memo.scope === this.#scope &&
+			memo.sort === sort &&
 			memo.message === message &&
 			memo.errorOpen === errorOpen &&
 			memo.choice === choice &&
@@ -2147,6 +2228,7 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		if (toggle) {
 			actions.push(pickerAction("scope", this.#scope === "all" ? "This folder" : "All projects", "tab"));
 		}
+		actions.push(pickerAction("sort", `Sort: ${SESSION_SORT_LABELS[sort]}`, bindingKeys("app.session.toggleSort")));
 		actions.push(
 			pickerAction("close", "Close", boundKeys("app.interrupt", ["escape"])[0] ?? "escape", { end: true }),
 		);
@@ -2194,7 +2276,17 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 			},
 			preview,
 		);
-		this.#pickerMemo = { view, preview, scope: this.#scope, message, errorOpen, choice, rename, node: result };
+		this.#pickerMemo = {
+			view,
+			preview,
+			scope: this.#scope,
+			sort,
+			message,
+			errorOpen,
+			choice,
+			rename,
+			node: result,
+		};
 		return result;
 	}
 
@@ -2232,7 +2324,8 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 	 * Picker pointer events run the keys' paths: a row click selects (arrows),
 	 * a second click or `Resume` resumes (Enter), `Delete` asks (Delete),
 	 * `Rename` renames (F2), `Pin` / `Unpin` flips the pin, the tab or `All projects` toggles scope (Tab),
-	 * `Close` cancels (Esc), and the confirm strip answers the delete dialog (Yes / Esc).
+	 * `Sort` moves to the next order (the sort key), `Close` cancels (Esc), and the confirm strip answers
+	 * the delete dialog (Yes / Esc).
 	 */
 	#handlePickerEvent(ev: PickerEvent): void {
 		const list = this.#sessionList;
@@ -2258,7 +2351,8 @@ export class SessionSelectorComponent<T extends SessionSelectorEntry = SessionSe
 		else if (ev.act === "pin") list.requestPin();
 		else if (ev.act === "scope") {
 			list.onToggleScope?.();
-		} else if (ev.act === "clear") list.clearSearch();
+		} else if (ev.act === "sort") list.cycleSort();
+		else if (ev.act === "clear") list.clearSearch();
 	}
 
 	/** Picker events (root keypath); fallback: scope tab → toggle scope, click on a session → resume it, exactly like a mouse click. */

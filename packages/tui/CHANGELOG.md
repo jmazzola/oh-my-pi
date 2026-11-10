@@ -3,6 +3,10 @@
 ## [Unreleased]
 - The live transcript reuses its per-block walk list across each frame's readers instead of rebuilding it three times per frame, so settled transcripts cost fewer short-lived allocations per frame ([#18705](https://github.com/can1357/oh-my-pi/pull/18705) by [@yuzu-octopus](https://github.com/yuzu-octopus))
 
+### Added
+
+- The `/resume` picker sorts by status (sessions that need a look first) or by size (largest first) as well as by recency: `app.session.toggleSort` (Ctrl+S) or the Sort button in Tern cycles the order, and Tern groups the list by status under the status sort
+
 ### Changed
 
 - `grep` and `ast_grep` results with no matches render as one line with `0 matches` in the warning color, dropping the separate `No matches found` row ([#18700](https://github.com/can1357/oh-my-pi/pull/18700) by [@JustasMasiulis](https://github.com/JustasMasiulis))

@@ -1,5 +1,7 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import type { TspPickerProps } from "@oh-my-pi/pi-wire";
+import { KeybindingsManager } from "../src/app-keybindings";
+import { getKeybindings, type KeybindingsManager as TuiKeybindingsManager, setKeybindings } from "../src/keybindings";
 import { OverlayPanel } from "../src/chrome/overlay-box";
 import { TextFormField } from "../src/components/form";
 import type { DescribeContext, NativeNode } from "../src/native/node";
@@ -284,6 +286,86 @@ describe("session selector rename", () => {
 		selector.handleInput("Beta");
 		const stale = props(selector.describe(withPicker)).items?.find(item => item.id === beta.path);
 		expect(stale?.label).toBe("Beta Prime");
+	});
+});
+
+describe("session selector sort", () => {
+	const CTRL_S = "\x13";
+	const done = { ...session("a", "Alpha", 0), size: 5_000 };
+	const interrupted = { ...session("b", "Beta", HOUR), status: "interrupted" as const, size: 900_000 };
+	const failed = { ...session("c", "Gamma", 3 * 24 * HOUR), status: "error" as const, size: 50_000 };
+	const pinned = { ...session("d", "Delta", 40 * 24 * HOUR), size: 2_000_000 };
+	let previous: TuiKeybindingsManager;
+
+	beforeEach(() => {
+		previous = getKeybindings();
+		setKeybindings(KeybindingsManager.inMemory());
+	});
+	afterEach(() => {
+		setKeybindings(previous);
+	});
+
+	function make() {
+		return new SessionSelectorComponent(
+			[done, interrupted, failed, pinned],
+			() => {},
+			() => {},
+			() => {},
+			{ pinnedIds: new Set([pinned.id]), currentSessionPath: done.path },
+		);
+	}
+
+	it("cycles recent, status and size with the sort key or the Sort action, pins first in each", () => {
+		const selector = make();
+		const sortLabel = () => props(selector.describe(withPicker)).actions?.find(a => a.id === "sort")?.label;
+		expect(sortLabel()).toBe("Sort: Recent");
+
+		selector.handleInput(CTRL_S);
+		let p = props(selector.describe(withPicker));
+		expect(sortLabel()).toBe("Sort: Status");
+		// Sessions that need a look lead; the selection moves to the top of the new order.
+		expect(p.order).toEqual([
+			{ group: "pinned-0", label: "Pinned", count: 1 },
+			pinned.path,
+			{ group: "status-error-1", label: "Error", count: 1 },
+			failed.path,
+			{ group: "status-interrupted-2", label: "Interrupted", count: 1 },
+			interrupted.path,
+			{ group: "status-complete-3", label: "Done", count: 1 },
+			done.path,
+		]);
+		expect(p.selected).toBe(pinned.path);
+
+		selector.handleNativeEvent({ type: "action", key: "", act: "sort", mods: [] });
+		p = props(selector.describe(withPicker));
+		expect(sortLabel()).toBe("Sort: Size");
+		expect(p.order).toEqual([
+			{ group: "pinned-0", label: "Pinned", count: 1 },
+			pinned.path,
+			{ group: "size-1", label: "Largest first", count: 3 },
+			interrupted.path,
+			failed.path,
+			done.path,
+		]);
+
+		selector.handleInput(CTRL_S);
+		expect(sortLabel()).toBe("Sort: Recent");
+		expect(props(selector.describe(withPicker)).order?.filter(entry => typeof entry === "string")).toEqual([
+			pinned.path,
+			done.path,
+			interrupted.path,
+			failed.path,
+		]);
+	});
+
+	it("orders search matches by the sort, the ranking under recent", () => {
+		const selector = make();
+		type(selector, "prompt");
+		const matches = () => props(selector.describe(withPicker)).order;
+		expect(matches()).toEqual([pinned.path, done.path, interrupted.path, failed.path]);
+		selector.handleInput(CTRL_S);
+		selector.handleInput(CTRL_S);
+		expect(matches()).toEqual([pinned.path, interrupted.path, failed.path, done.path]);
 	});
 });
 

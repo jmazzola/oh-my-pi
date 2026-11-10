@@ -157,6 +157,7 @@ Flow:
 - Delete, or Backspace on an empty search, to delete after confirmation
 - Esc to cancel; Ctrl+C to exit
 - Tab to toggle current-folder / all-projects scope
+- `app.session.toggleSort` (Ctrl+S; the `Sort:` button in Tern) to cycle the order: recent (the default; by day in Tern), status (error, aborted, interrupted, pending, then done, each by recency, grouped by status in Tern), and size (largest first). Pinned sessions stay first in every order; a search ranks its matches under recent and sorts them under status or size. Each change selects the top row; the order resets to recent when the picker reopens
 - mouse wheel/click in the fullscreen picker
 - multi-token search across id/title/cwd/first message/prefix message text/path: literal matches lead by recency, then sufficiently strong fuzzy matches; prompt-history matches from `history.db` may be promoted after typing pauses
 - the live session (when `currentSessionPath` is supplied) is labeled `current` on its metadata line and focused on open and after a Tab scope toggle
