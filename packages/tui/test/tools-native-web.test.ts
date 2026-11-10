@@ -121,6 +121,33 @@ describe("generic / MCP native views", () => {
 		expect(nodes(view.body)[0]?.k).toBe("tree");
 	});
 
+	it("default renderer keeps the full args in a folded Args section after the output", () => {
+		const subject = `A clean Live2D eye texture ${"with soft iris shading ".repeat(8)}`;
+		const args = { subject, input: [{ path: "eye.png" }], i: "intent" };
+		const call = describeDefaultToolExecution({ label: "GenerateImage", args, options: opts });
+		const res = describeDefaultToolExecution({
+			label: "GenerateImage",
+			args,
+			result: { output: "Generated 1 image(s)", isError: false },
+			options: opts,
+		});
+		for (const view of [call, res]) {
+			// The head summary clips the value; the folded section carries all of it.
+			expect(view.tool?.target).not.toContain(subject);
+			const section = nodes(view.body).at(-1)!;
+			expect(section).toMatchObject({ k: "section", key: "args", p: { collapsible: true, collapsed: true } });
+			expect(JSON.stringify(section)).toContain(subject);
+			expect(JSON.stringify(section)).not.toContain("intent");
+			// Scalars sit in a kv grid, whose values wrap (Tern's json viewer previews a string on one
+			// line); containers stay a JSON value.
+			expect(nodes(section.c).map(n => n.k)).toEqual(["kv", "tree"]);
+		}
+		expect(nodes(res.body).map(n => n.k)).toEqual(["ansi", "section"]);
+		expect(
+			describeDefaultToolExecution({ label: "custom", args: { i: "intent" }, options: opts }).body,
+		).toBeUndefined();
+	});
+
 	it("MCP call and result keep the full args in a folded Args section after the output", () => {
 		const query = `find ${"long ".repeat(40)}terms`;
 		const args = { query, i: "intent" };
@@ -138,18 +165,20 @@ describe("generic / MCP native views", () => {
 		expect(describeMCPCall({}, "srv/tool").body).toBeUndefined();
 	});
 
-	it("MCP sends JSON output and args to a host that draws json as values, less the hidden root keys", () => {
+	it("MCP sends JSON output and nested args to a host that draws json as values, less the hidden root keys", () => {
 		const json = { ...opts, json: true };
-		const args = { query: "tokyo", limit: 2, i: "intent" };
+		const args = { query: "tokyo", limit: 2, filter: { lang: "en" }, i: "intent" };
 		const text = JSON.stringify({ hits: [{ id: 1 }], __partialJson: "{" });
 		const res = describeMCPResult({ content: [{ type: "text", text }] }, json, args);
 		const [output, section] = nodes(res?.body);
 		expect(output?.k).toBe("json");
 		expect(output?.p).toEqual({ value: { hits: [{ id: 1 }] } });
-		const argsNode = nodes(section?.c)[0];
-		expect(argsNode?.k).toBe("json");
-		expect(argsNode?.p).toEqual({ value: { query: "tokyo", limit: 2 } });
+		const [scalars, nested] = nodes(section?.c);
+		expect(scalars?.k).toBe("kv");
+		expect(JSON.stringify(scalars)).toContain("tokyo");
+		expect(nested?.k).toBe("json");
+		expect(nested?.p).toEqual({ value: { filter: { lang: "en" } } });
 		const call = describeMCPCall(args, "srv/tool", json);
-		expect(nodes(nodes(call.body)[0]?.c)[0]?.k).toBe("json");
+		expect(nodes(nodes(call.body)[0]?.c).map(n => n.k)).toEqual(["kv", "json"]);
 	});
 });

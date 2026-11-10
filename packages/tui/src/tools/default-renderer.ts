@@ -2,6 +2,7 @@ import type { Component } from "../index";
 import { isRecord } from "@oh-my-pi/pi-utils";
 import type { NativeToolHead, NativeToolView, RenderResultOptions } from "./renderer";
 import { ansi } from "../native/describe";
+import type { NativeNode } from "../native/node";
 import { noteText } from "./native-view";
 import type { Theme } from "../theme/theme";
 import { formatOutputPaneLines, styleToolOutputLine } from "../render/output-pane";
@@ -9,6 +10,7 @@ import { renderStatusLine, type StatusLineOptions } from "../render/status-line"
 import { plainToolCard, type ToolCardPhase } from "../render/tool-card";
 import { clipCollapsed } from "../render/render-utils";
 import {
+	describeArgsSection,
 	describeJsonValue,
 	formatArgsInline,
 	JSON_TREE_MAX_DEPTH_COLLAPSED,
@@ -191,7 +193,9 @@ const NATIVE_ARGS_SUMMARY_CHARS = 160;
  * wire — the card-level disclosure clamp the terminal applies is the only
  * bound, so an expanded card keeps every row. The `json` viewer never cuts;
  * JSON the fallback tree's depth, node or scalar caps would cut keeps the raw
- * path instead.
+ * path instead. The complete arguments follow in a folded `Args` section, as
+ * the ANSI card's Args tree, so the collapsed preview still leads with the
+ * output (and a pending call shows only that section).
  */
 export function describeDefaultToolExecution(input: DefaultToolRenderInput): NativeToolView {
 	const { result } = input;
@@ -201,10 +205,16 @@ export function describeDefaultToolExecution(input: DefaultToolRenderInput): Nat
 			? formatArgsInline(args, NATIVE_ARGS_SUMMARY_CHARS, { characterBudget: true })
 			: undefined;
 	const tool: NativeToolHead = { title: input.label, target: summary || undefined, targetKind: "text" };
-	if (!result) return { tool };
-	const output = result.output.trimEnd();
+	const section = args ? describeArgsSection(args, input.options.json === true) : undefined;
+	if (!result) return { tool, body: section ? [section] : undefined };
 	const tone = result.skipped ? "info" : result.isError ? "error" : undefined;
-	if (!output) return { tool, tone, body: [noteText("(no output)")] };
+	const output = describeDefaultOutput(result.output.trimEnd(), input.options.json);
+	return { tool, tone, body: section ? [output, section] : [output] };
+}
+
+/** The generic card's result body: a note when empty, JSON as a value or tree when nothing is lost, else raw output. */
+function describeDefaultOutput(output: string, json: boolean | undefined): NativeNode {
+	if (!output) return noteText("(no output)");
 	if (isTreeSafeJson(output)) {
 		let parsed: unknown;
 		try {
@@ -215,17 +225,17 @@ export function describeDefaultToolExecution(input: DefaultToolRenderInput): Nat
 		if (parsed !== undefined) {
 			let truncated = false;
 			const tree = describeJsonValue(parsed, {
-				native: input.options.json,
+				native: json,
 				// A result's own `i` or `__partialJson` keys are data, not call metadata.
 				hiddenRootKeys: [],
 				onTruncated: () => {
 					truncated = true;
 				},
 			});
-			if (!truncated) return { tool, tone, body: [tree] };
+			if (!truncated) return tree;
 		}
 	}
-	return { tool, tone, body: [ansi(output)] };
+	return ansi(output);
 }
 
 /** Render the generic fallback as the state-tinted card used by direct custom tools. */

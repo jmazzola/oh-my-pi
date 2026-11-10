@@ -9,13 +9,14 @@ import { type Component, Markdown } from "../index";
 import type { NativeToolHead, NativeToolView, RenderResultOptions } from "./renderer";
 import { isRecord, sanitizeText } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
-import { ansi, md, node, span } from "../native/describe";
-import type { NativeChild, NativeNode } from "../native/node";
+import { ansi, md } from "../native/describe";
+import type { NativeChild } from "../native/node";
 import { OwnerMemo } from "../native/memo";
 import { plainText } from "../native/spans";
 import { errorText, noteText, truncationNotice } from "./native-view";
 import { getMarkdownTheme, type Theme } from "../theme/theme";
 import {
+	describeArgsSection,
 	describeJsonValue,
 	formatArgsInline,
 	JSON_TREE_MAX_DEPTH_COLLAPSED,
@@ -299,22 +300,6 @@ function mcpHead(title: string, entries: readonly [string, unknown][]): NativeTo
 	return { title, target: summary ? plainText(summary) : undefined, targetKind: "text" };
 }
 
-/**
- * Native counterpart of the ANSI card's Args tree: the complete arguments,
- * folded under an `Args` section because the head summary clips each value.
- * The host's `json` viewer, when it draws one, lists the arguments with their
- * containers folded to one-line previews.
- */
-function mcpArgsSection(entries: readonly [string, unknown][], json: boolean): NativeNode | undefined {
-	if (entries.length === 0) return undefined;
-	return node(
-		"section",
-		{ head: [span("Args", "muted")], collapsible: true, collapsed: true },
-		[describeJsonValue(Object.fromEntries(entries), { native: json })],
-		"args",
-	);
-}
-
 /** Native MCP call view: the head plus the folded args, inline while pending. */
 export function describeMCPCall(
 	args: Record<string, unknown>,
@@ -322,7 +307,7 @@ export function describeMCPCall(
 	options?: RenderResultOptions,
 ): NativeToolView {
 	const entries = visibleMcpArgs(args);
-	const section = mcpArgsSection(entries, options?.json === true);
+	const section = describeArgsSection(Object.fromEntries(entries), options?.json === true);
 	return { tool: mcpHead(label, entries), body: section ? [section] : undefined, inline: true };
 }
 
@@ -369,7 +354,7 @@ export function describeMCPResult(
 		const warning = truncationNotice(result.details?.meta);
 		if (warning) body.push(warning);
 		const entries = visibleMcpArgs(args);
-		const section = mcpArgsSection(entries, json);
+		const section = describeArgsSection(Object.fromEntries(entries), json);
 		if (section) body.push(section);
 		return {
 			tool: mcpHead(title, entries),

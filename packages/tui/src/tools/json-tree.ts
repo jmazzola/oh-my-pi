@@ -6,7 +6,7 @@ import { isRecord, sanitizeText, sanitizeTextDeep } from "@oh-my-pi/pi-utils";
 import { TreeView, treeRowPrefix } from "../components/tree-view";
 import { truncateToWidth } from "../render/render-utils";
 import type { Theme, ThemeColor } from "../theme/theme";
-import { node, span } from "../native/describe";
+import { compact, kv, node, span } from "../native/describe";
 import type { NativeNode } from "../native/node";
 import { plainText } from "../native/spans";
 
@@ -594,4 +594,38 @@ export function describeJsonValue(value: unknown, options: JsonValueDescribeOpti
 		}
 	}
 	return node("json", { value: sanitizeTextDeep(shown), open: options.open || undefined });
+}
+
+/**
+ * Native counterpart of a tool card's ANSI `Args` tree: the complete
+ * arguments, folded under an `Args` section because the head's one-line
+ * summary clips each value. Scalars sit in a `kv` grid whose values wrap, so a
+ * long prompt reads whole, as the ANSI tree shows it (strings cut at the same
+ * {@link JSON_TREE_SCALAR_LEN_EXPANDED}) where the `json` viewer would preview
+ * it on one line. Containers follow as a JSON value: the host's `json` viewer
+ * when it draws one (`json`), else a JSON tree. Undefined when no argument is
+ * shown (the intent and streaming bookkeeping keys never are).
+ */
+export function describeArgsSection(args: Record<string, unknown>, json: boolean): NativeNode | undefined {
+	const scalars: [string, TspSpan[]][] = [];
+	const containers: Record<string, unknown> = {};
+	let hasContainers = false;
+	for (const key in args) {
+		if (!Object.hasOwn(args, key) || DEFAULT_HIDDEN_ROOT_KEYS.includes(key)) continue;
+		const value = args[key];
+		if (value !== null && typeof value === "object") {
+			containers[key] = value;
+			hasContainers = true;
+		} else if (typeof value === "string") {
+			scalars.push([
+				plainText(key),
+				[span(`"${clipScalar(plainText(value), JSON_TREE_SCALAR_LEN_EXPANDED)}"`, "syntaxString")],
+			]);
+		} else {
+			scalars.push([plainText(key), [span(plainText(formatScalar(value, 0)), jsonScalarToken(value))]]);
+		}
+	}
+	const children = compact([kv(scalars), hasContainers && describeJsonValue(containers, { native: json })]);
+	if (children.length === 0) return undefined;
+	return node("section", { head: [span("Args", "muted")], collapsible: true, collapsed: true }, children, "args");
 }

@@ -11,6 +11,7 @@
 ### Fixed
 
 - Ask form textareas edited from Tern now restart the inactivity timeout instead of submitting mid-edit
+- Fixed Tern cards of tools without their own renderer (such as `generate_image` and extension tools) showing only a clipped one-line summary of the arguments; the call and result cards now include a folded `Args` section with the full arguments, so expanding the card shows the whole prompt
 
 ## [18.18.7] - 2026-11-10
 

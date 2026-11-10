@@ -46,7 +46,8 @@ describe("generic fallback card", () => {
 
 		const view = describeDefaultToolExecution(mcpResult(output, false));
 		const body = view.body ?? [];
-		expect(body).toHaveLength(1);
+		// The output in one node, then the folded Args section.
+		expect(body).toHaveLength(2);
 		const child = body[0];
 		expect(child !== undefined && "k" in child && child.k).toBe("ansi");
 		const props = child && "k" in child ? child.p : undefined;
